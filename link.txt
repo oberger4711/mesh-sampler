@@ -1,0 +1,1 @@
+https://stackoverflow.com/questions/50595530/how-to-get-texture-coordinates-from-vtk-intersectwithline

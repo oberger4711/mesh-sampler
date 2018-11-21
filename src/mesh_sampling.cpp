@@ -48,6 +48,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/console/print.h>
 #include <pcl/console/parse.h>
+#include "texture.h"
 
 inline double
 uniform_deviate (int seed)
@@ -187,7 +188,7 @@ const float default_leaf_size = 0.01f;
 void
 printHelp (int, char **argv)
 {
-  print_error ("Syntax is: %s input.{ply,obj} output.pcd <options>\n", argv[0]);
+  print_error ("Syntax is: %s input.{ply,obj} texture.{png, jpeg, ...} output.pcd <options>\n", argv[0]);
   print_info ("  where options are:\n");
   print_info ("                     -n_samples X      = number of samples (default: ");
   print_value ("%d", default_number_samples);
@@ -199,17 +200,17 @@ printHelp (int, char **argv)
   print_info ("                     -write_normals = flag to write normals to the output pcd\n");
   print_info ("                     -write_colors  = flag to write colors to the output pcd\n");
   print_info (
-              "                     -no_vis_result = flag to stop visualizing the generated pcd\n");
+              "                     -vis_result = flag to stop visualizing the generated pcd\n");
 }
 
 /* ---[ */
 int
 main (int argc, char **argv)
 {
-  print_info ("Convert a CAD model to a point cloud using uniform sampling. For more information, use: %s -h\n",
+  print_info ("Convert a textured CAD model to a point cloud using uniform sampling. For more information, use: %s -h\n",
               argv[0]);
 
-  if (argc < 3)
+  if (argc < 4)
   {
     printHelp (argc, argv);
     return (-1);
@@ -220,9 +221,10 @@ main (int argc, char **argv)
   parse_argument (argc, argv, "-n_samples", SAMPLE_POINTS_);
   float leaf_size = default_leaf_size;
   parse_argument (argc, argv, "-leaf_size", leaf_size);
-  bool vis_result = ! find_switch (argc, argv, "-no_vis_result");
+  bool vis_result = find_switch (argc, argv, "-vis_result");
   const bool write_normals = find_switch (argc, argv, "-write_normals");
   const bool write_colors = find_switch (argc, argv, "-write_colors");
+  std::string texture_file_name(argv[2]);
 
   // Parse the command line arguments for .ply and PCD files
   std::vector<int> pcd_file_indices = parse_file_extension_argument (argc, argv, ".pcd");
@@ -277,6 +279,10 @@ main (int argc, char **argv)
     vis.setRepresentationToSurfaceForAllActors ();
     vis.spin ();
   }
+
+  // Load texture.
+  Texture texture(texture_file_name);
+  std::cout << texture.width() << std::endl;
 
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_1 (new pcl::PointCloud<pcl::PointXYZRGBNormal>);
   uniform_sampling (polydata1, SAMPLE_POINTS_, write_normals, write_colors, *cloud_1);
