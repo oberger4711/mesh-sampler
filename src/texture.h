@@ -14,7 +14,7 @@ class Texture
 {
 public:
   Texture(const std::string& file_name);
-  inline Pixel operator()(const int x, const int y) const;
+  Pixel operator()(const int x, const int y) const;
   bool isInBounds(const int x, const int y) const;
   int width() const;
   int height() const;

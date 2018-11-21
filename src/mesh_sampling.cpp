@@ -79,7 +79,13 @@ randomPointTriangle (float a1, float a2, float a3, float b1, float b2, float b3,
 }
 
 inline void
-randPSurface (vtkPolyData * polydata, std::vector<double> * cumulativeAreas, double totalArea, Eigen::Vector3f& p, bool calcNormal, Eigen::Vector3f& n, bool calcColor, Eigen::Vector3f& c)
+sampleTexture (const double** meshPoints, const double** texturePoints)
+{
+
+}
+
+inline void
+randPSurface (vtkPolyData * polydata, const Texture& texture, std::vector<double> * cumulativeAreas, double totalArea, Eigen::Vector3f& p, bool calcNormal, Eigen::Vector3f& n, bool calcColor, Eigen::Vector3f& c)
 {
   float r = static_cast<float> (uniform_deviate (rand ()) * totalArea);
 
@@ -109,6 +115,8 @@ randPSurface (vtkPolyData * polydata, std::vector<double> * cumulativeAreas, dou
 
   if (calcColor)
   {
+    // Old implementation uses vertex colors.
+    /*
     vtkUnsignedCharArray *const colors = vtkUnsignedCharArray::SafeDownCast (polydata->GetPointData ()->GetScalars ());
     if (colors && colors->GetNumberOfComponents () == 3)
     {
@@ -120,6 +128,7 @@ randPSurface (vtkPolyData * polydata, std::vector<double> * cumulativeAreas, dou
       randomPointTriangle (float (cA[0]), float (cA[1]), float (cA[2]),
                            float (cB[0]), float (cB[1]), float (cB[2]),
                            float (cC[0]), float (cC[1]), float (cC[2]), r1, r2, c);
+
     }
     else
     {
@@ -128,11 +137,40 @@ randPSurface (vtkPolyData * polydata, std::vector<double> * cumulativeAreas, dou
         PCL_WARN ("Mesh has no vertex colors, or vertex colors are not RGB!");
       printed_once = true;
     }
+    */
+    // New implementation samples texture.
+    double tA[2], tB[2], tC[2];
+    auto* const textureCoords = polydata->GetPointData()->GetTCoords();
+    textureCoords->GetTuple(ptIds[0], tA);
+    textureCoords->GetTuple(ptIds[1], tB);
+    textureCoords->GetTuple(ptIds[2], tC);
+    Eigen::Vector3f tFloat;
+    randomPointTriangle (float (tA[0]), float (tA[1]), 0.f,
+                         float (tB[0]), float (tB[1]), 0.f,
+                         float (tC[0]), float (tC[1]), 0.f, r1, r2, tFloat);
+    // Scale.
+    tFloat[1] = 1 - tFloat[1];
+    //tFloat[0] = 1 - tFloat[0];
+    tFloat = tFloat.cwiseProduct(Eigen::Vector3f(texture.width(), texture.height(), 0));
+    //std::cout << tFloat[0] << " " << tFloat[1] << std::endl;
+    // Round.
+    Eigen::Vector2i t = (tFloat + Eigen::Vector3f(0.5f, 0.5f, 0.f)).cast<int>().topRows<2>();
+    std::cout << t[0] << " " << t[1] << std::endl;
+    // Sample pixel.
+    if (!texture.isInBounds(t[0], t[1]))
+    {
+      std::cerr << "Point out of bounds!" << std::endl;
+    }
+    const auto px = texture(t[0], t[1]);
+    //std::cout << px.r << " " << px.g << " " << px.b << std::endl;
+    c[0] = px.r;
+    c[1] = px.g;
+    c[2] = px.b;
   }
 }
 
 void
-uniform_sampling (vtkSmartPointer<vtkPolyData> polydata, size_t n_samples, bool calc_normal, bool calc_color, pcl::PointCloud<pcl::PointXYZRGBNormal> & cloud_out)
+uniform_sampling (vtkSmartPointer<vtkPolyData> polydata, const Texture& texture, size_t n_samples, bool calc_normal, bool calc_color, pcl::PointCloud<pcl::PointXYZRGBNormal> & cloud_out)
 {
   polydata->BuildCells ();
   vtkSmartPointer<vtkCellArray> cells = polydata->GetPolys ();
@@ -159,7 +197,7 @@ uniform_sampling (vtkSmartPointer<vtkPolyData> polydata, size_t n_samples, bool 
     Eigen::Vector3f p;
     Eigen::Vector3f n;
     Eigen::Vector3f c;
-    randPSurface (polydata, &cumulativeAreas, totalArea, p, calc_normal, n, calc_color, c);
+    randPSurface (polydata, texture, &cumulativeAreas, totalArea, p, calc_normal, n, calc_color, c);
     cloud_out.points[i].x = p[0];
     cloud_out.points[i].y = p[1];
     cloud_out.points[i].z = p[2];
@@ -282,10 +320,9 @@ main (int argc, char **argv)
 
   // Load texture.
   Texture texture(texture_file_name);
-  std::cout << texture.width() << std::endl;
 
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud_1 (new pcl::PointCloud<pcl::PointXYZRGBNormal>);
-  uniform_sampling (polydata1, SAMPLE_POINTS_, write_normals, write_colors, *cloud_1);
+  uniform_sampling (polydata1, texture, SAMPLE_POINTS_, write_normals, write_colors, *cloud_1);
 
   if (INTER_VIS)
   {
