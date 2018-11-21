@@ -36,7 +36,7 @@
  */
 
 #include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
 #include <pcl/io/vtk_lib_io.h>
 #include <pcl/common/transforms.h>
 #include <vtkVersion.h>
@@ -155,17 +155,20 @@ randPSurface (vtkPolyData * polydata, const Texture& texture, std::vector<double
     //std::cout << tFloat[0] << " " << tFloat[1] << std::endl;
     // Round.
     Eigen::Vector2i t = (tFloat + Eigen::Vector3f(0.5f, 0.5f, 0.f)).cast<int>().topRows<2>();
-    std::cout << t[0] << " " << t[1] << std::endl;
+    //std::cout << t[0] << " " << t[1] << std::endl;
     // Sample pixel.
-    if (!texture.isInBounds(t[0], t[1]))
+    if (texture.isInBounds(t[0], t[1]))
     {
-      std::cerr << "Point out of bounds!" << std::endl;
+      const auto px = texture(t[0], t[1]);
+      //std::cout << px.r << " " << px.g << " " << px.b << std::endl;
+      c[0] = px.r;
+      c[1] = px.g;
+      c[2] = px.b;
     }
-    const auto px = texture(t[0], t[1]);
-    //std::cout << px.r << " " << px.g << " " << px.b << std::endl;
-    c[0] = px.r;
-    c[1] = px.g;
-    c[2] = px.b;
+    else
+    {
+      std::cerr << "Point (" << t[0] << ", " << t[1] << ") out of bounds!" << std::endl;
+    }
   }
 }
 
@@ -226,7 +229,7 @@ const float default_leaf_size = 0.01f;
 void
 printHelp (int, char **argv)
 {
-  print_error ("Syntax is: %s input.{ply,obj} texture.{png, jpeg, ...} output.pcd <options>\n", argv[0]);
+  print_error ("Syntax is: %s input.obj texture.{png, jpeg, ...} output.ply <options>\n", argv[0]);
   print_info ("  where options are:\n");
   print_info ("                     -n_samples X      = number of samples (default: ");
   print_value ("%d", default_number_samples);
@@ -239,6 +242,19 @@ printHelp (int, char **argv)
   print_info ("                     -write_colors  = flag to write colors to the output pcd\n");
   print_info (
               "                     -vis_result = flag to stop visualizing the generated pcd\n");
+}
+
+template<typename PointT> void
+saveFile(const std::string& fileName, const pcl::PointCloud<PointT>& cloud, const bool usePly)
+{
+  if (usePly)
+  {
+    pcl::io::savePLYFileASCII(fileName, cloud);
+  }
+  else
+  {
+    pcl::io::savePCDFileASCII(fileName, cloud);
+  }
 }
 
 /* ---[ */
@@ -264,29 +280,23 @@ main (int argc, char **argv)
   const bool write_colors = find_switch (argc, argv, "-write_colors");
   std::string texture_file_name(argv[2]);
 
-  // Parse the command line arguments for .ply and PCD files
+  // Parse the command line arguments for .ply files
+  std::vector<int> ply_file_indices = parse_file_extension_argument (argc, argv, ".ply");
   std::vector<int> pcd_file_indices = parse_file_extension_argument (argc, argv, ".pcd");
-  if (pcd_file_indices.size () != 1)
+  if (ply_file_indices.size () != 1 && pcd_file_indices.size () != 1)
   {
-    print_error ("Need a single output PCD file to continue.\n");
+    print_error ("Need a single PLY or PCD file as output to continue.\n");
     return (-1);
   }
-  std::vector<int> ply_file_indices = parse_file_extension_argument (argc, argv, ".ply");
   std::vector<int> obj_file_indices = parse_file_extension_argument (argc, argv, ".obj");
-  if (ply_file_indices.size () != 1 && obj_file_indices.size () != 1)
+  if (obj_file_indices.size () != 1)
   {
-    print_error ("Need a single input PLY/OBJ file to continue.\n");
+    print_error ("Need a single input OBJ file to continue.\n");
     return (-1);
   }
 
   vtkSmartPointer<vtkPolyData> polydata1 = vtkSmartPointer<vtkPolyData>::New ();
-  if (ply_file_indices.size () == 1)
-  {
-    pcl::PolygonMesh mesh;
-    pcl::io::loadPolygonFilePLY (argv[ply_file_indices[0]], mesh);
-    pcl::io::mesh2vtk (mesh, polydata1);
-  }
-  else if (obj_file_indices.size () == 1)
+  if (obj_file_indices.size () == 1)
   {
     vtkSmartPointer<vtkOBJReader> readerQuery = vtkSmartPointer<vtkOBJReader>::New ();
     readerQuery->SetFileName (argv[obj_file_indices[0]]);
@@ -350,30 +360,35 @@ main (int argc, char **argv)
     vis3.spin ();
   }
 
+  const bool usePly = !ply_file_indices.empty();
+  std::string fileName;
+  if (usePly) fileName = argv[ply_file_indices[0]];
+  else fileName = argv[pcd_file_indices[0]];
+
   if (write_normals && write_colors)
   {
-    savePCDFileASCII (argv[pcd_file_indices[0]], *voxel_cloud);
+    saveFile (fileName, *voxel_cloud, usePly);
   }
   else if (write_normals)
   {
     pcl::PointCloud<pcl::PointNormal>::Ptr cloud_xyzn (new pcl::PointCloud<pcl::PointNormal>);
     // Strip uninitialized colors from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyzn);
-    savePCDFileASCII (argv[pcd_file_indices[0]], *cloud_xyzn);
+    saveFile (fileName, *cloud_xyzn, usePly);
   }
   else if (write_colors)
   {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_xyzrgb (new pcl::PointCloud<pcl::PointXYZRGB>);
     // Strip uninitialized normals from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyzrgb);
-    savePCDFileASCII (argv[pcd_file_indices[0]], *cloud_xyzrgb);
+    saveFile (fileName, *cloud_xyzrgb, usePly);
   }
   else // !write_normals && !write_colors
   {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz (new pcl::PointCloud<pcl::PointXYZ>);
     // Strip uninitialized normals and colors from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyz);
-    savePCDFileASCII (argv[pcd_file_indices[0]], *cloud_xyz);
+    saveFile (fileName, *cloud_xyz, usePly);
   }
 }
 
