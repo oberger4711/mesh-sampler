@@ -18,8 +18,8 @@ void savePCACHEFileASCII(const std::string& fileName, const pcl::PointCloud<Poin
 {
   ofstream file;
   file.open(fileName);
-  //const auto endl = std::endl;
-  const auto endl = "\r\n";
+  const auto endl = "\n";
+  //const auto endl = "\r\n"; // Windows line ending
   // Write header.
   file
     << "pcache" << endl
