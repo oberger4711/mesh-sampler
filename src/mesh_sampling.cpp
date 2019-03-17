@@ -49,6 +49,14 @@
 #include <pcl/console/print.h>
 #include <pcl/console/parse.h>
 #include "texture.h"
+#include "pcache.h"
+
+enum class FileType
+{
+  PLY,
+  PCD,
+  PCACHE
+};
 
 inline double
 uniform_deviate (int seed)
@@ -229,7 +237,7 @@ const float default_leaf_size = 0.01f;
 void
 printHelp (int, char **argv)
 {
-  print_error ("Syntax is: %s input.obj texture.{png, jpeg, ...} output.ply <options>\n", argv[0]);
+  print_error ("Syntax is: %s input.obj texture.{png, jpeg, ...} output.{ply, pcd, pcache} <options>\n", argv[0]);
   print_info ("  where options are:\n");
   print_info ("                     -n_samples X      = number of samples (default: ");
   print_value ("%d", default_number_samples);
@@ -238,22 +246,26 @@ printHelp (int, char **argv)
               "                     -leaf_size X  = the XYZ leaf size for the VoxelGrid -- for data reduction (default: ");
   print_value ("%f", default_leaf_size);
   print_info (" m)\n");
-  print_info ("                     -write_normals = flag to write normals to the output pcd\n");
-  print_info ("                     -write_colors  = flag to write colors to the output pcd\n");
+  print_info ("                     -write_normals = flag to write normals to the output\n");
+  print_info ("                     -write_colors  = flag to write colors to the output\n");
   print_info (
-              "                     -vis_result = flag to stop visualizing the generated pcd\n");
+              "                     -vis_result = flag to stop visualizing the generated\n");
 }
 
 template<typename PointT> void
-saveFile(const std::string& fileName, const pcl::PointCloud<PointT>& cloud, const bool usePly)
+saveFile(const std::string& fileName, const pcl::PointCloud<PointT>& cloud, const FileType fileType)
 {
-  if (usePly)
+  switch (fileType)
   {
-    pcl::io::savePLYFileASCII(fileName, cloud);
-  }
-  else
-  {
-    pcl::io::savePCDFileASCII(fileName, cloud);
+    case FileType::PLY:
+      pcl::io::savePLYFileASCII(fileName, cloud);
+      break;
+    case FileType::PCD:
+      pcl::io::savePCDFileASCII(fileName, cloud);
+      break;
+    case FileType::PCACHE:
+      savePCACHEFileASCII(fileName, cloud);
+      break;
   }
 }
 
@@ -283,9 +295,10 @@ main (int argc, char **argv)
   // Parse the command line arguments for .ply files
   std::vector<int> ply_file_indices = parse_file_extension_argument (argc, argv, ".ply");
   std::vector<int> pcd_file_indices = parse_file_extension_argument (argc, argv, ".pcd");
-  if (ply_file_indices.size () != 1 && pcd_file_indices.size () != 1)
+  std::vector<int> pcache_file_indices = parse_file_extension_argument (argc, argv, ".pcache");
+  if (ply_file_indices.size () != 1 && pcd_file_indices.size () != 1 && pcache_file_indices.size() != 1)
   {
-    print_error ("Need a single PLY or PCD file as output to continue.\n");
+    print_error ("Need a single PLY, PCD or PCACHE file as output to continue.\n");
     return (-1);
   }
   std::vector<int> obj_file_indices = parse_file_extension_argument (argc, argv, ".obj");
@@ -360,35 +373,48 @@ main (int argc, char **argv)
     vis3.spin ();
   }
 
-  const bool usePly = !ply_file_indices.empty();
+  FileType fileType;
   std::string fileName;
-  if (usePly) fileName = argv[ply_file_indices[0]];
-  else fileName = argv[pcd_file_indices[0]];
+  if (!ply_file_indices.empty())
+  {
+    fileType = FileType::PLY;
+    fileName = argv[ply_file_indices[0]];
+  }
+  else if (!pcd_file_indices.empty())
+  {
+    fileType = FileType::PCD;
+    fileName = argv[pcd_file_indices[0]];
+  }
+  else if (!pcache_file_indices.empty())
+  {
+    fileType = FileType::PCACHE;
+    fileName = argv[pcache_file_indices[0]];
+  }
 
   if (write_normals && write_colors)
   {
-    saveFile (fileName, *voxel_cloud, usePly);
+    saveFile (fileName, *voxel_cloud, fileType);
   }
   else if (write_normals)
   {
     pcl::PointCloud<pcl::PointNormal>::Ptr cloud_xyzn (new pcl::PointCloud<pcl::PointNormal>);
     // Strip uninitialized colors from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyzn);
-    saveFile (fileName, *cloud_xyzn, usePly);
+    saveFile (fileName, *cloud_xyzn, fileType);
   }
   else if (write_colors)
   {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_xyzrgb (new pcl::PointCloud<pcl::PointXYZRGB>);
     // Strip uninitialized normals from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyzrgb);
-    saveFile (fileName, *cloud_xyzrgb, usePly);
+    saveFile (fileName, *cloud_xyzrgb, fileType);
   }
   else // !write_normals && !write_colors
   {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz (new pcl::PointCloud<pcl::PointXYZ>);
     // Strip uninitialized normals and colors from cloud:
     pcl::copyPointCloud (*voxel_cloud, *cloud_xyz);
-    saveFile (fileName, *cloud_xyz, usePly);
+    saveFile (fileName, *cloud_xyz, fileType);
   }
 }
 
